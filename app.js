@@ -29,7 +29,7 @@
       : `${a.getDate()} ${MES[a.getMonth()]} – ${b.getDate()} ${MES[b.getMonth()]} ${b.getFullYear()}`;
   }
 
-  const state = { week: iso(mondayOf(new Date())), tasks: [], ends: {}, filter: null, sort: 'start', mode: 'pending', canWrite: true };
+  const state = { week: iso(mondayOf(new Date())), tasks: [], ends: {}, sort: 'start', mode: 'pending', canWrite: true };
   let db = null, downloads = null, standalone = false, unsubTasks = null, unsubWeek = null, local = null;
 
   const startSlot = t => t.day*2 + t.half;
@@ -38,15 +38,13 @@
   const slotHours = s => (s % 2 === 0) ? (toMin(MID) - toMin(START))/60 : (toMin(endOf(Math.floor(s/2))) - toMin(MID))/60;
   const taskHours = t => { let h = 0; for (let s = startSlot(t); s <= endSlot(t); s++) h += slotHours(s); return h; };
   const slotName = s => `${DAYS[Math.floor(s/2)]} ${s%2 ? 'tarde' : 'mañana'}`;
-  const whoKey = t => (t.assignee || '').trim().toLowerCase();
 
   function normTask(id, d){
     return {
       id, week: String(d.week || state.week),
       name: String(d.name || 'Sin nombre').slice(0,120),
-      desc: String(d.desc || '').slice(0,1000),
+      desc: String(d.desc || '').slice(0,2000),
       priority: clampInt(d.priority,1,10,5),
-      assignee: String(d.assignee || '').slice(0,60),
       day: clampInt(d.day,0,4,0), half: clampInt(d.half,0,1,0),
       dur: clampInt(d.dur,1,10,1)
     };
@@ -59,30 +57,6 @@
     return a;
   }
 
-  function conflicts(){
-    const out = {}, t = state.tasks;
-    for (let i = 0; i < t.length; i++) for (let j = i+1; j < t.length; j++) {
-      const a = t[i], b = t[j];
-      if (!whoKey(a) || whoKey(a) !== whoKey(b)) continue;
-      if (startSlot(a) <= endSlot(b) && startSlot(b) <= endSlot(a)) {
-        (out[a.id] = out[a.id] || []).push(b.name);
-        (out[b.id] = out[b.id] || []).push(a.name);
-      }
-    }
-    return out;
-  }
-
-  function people(){
-    const m = new Map();
-    for (const t of state.tasks) {
-      const k = whoKey(t) || '__none';
-      const e = m.get(k) || {key:k, name: t.assignee.trim() || 'Sin asignar', halves:0, hours:0, count:0};
-      e.halves += endSlot(t) - startSlot(t) + 1; e.hours += taskHours(t); e.count++;
-      m.set(k, e);
-    }
-    return [...m.values()].sort((a,b) => b.halves - a.halves || a.name.localeCompare(b.name));
-  }
-
   /* ---------- render ---------- */
   function render(){
     const mon = parseISO(state.week);
@@ -91,13 +65,6 @@
     const extDays = [0,1,2,3,4].filter(d => endOf(d) !== BASE_END);
     $('sub').textContent = '08:00 – 17:00 · Mañana 08:00–12:30 · Tarde 12:30–17:00' +
       (extDays.length ? ' · ' + extDays.map(d => `${DAYS[d]} hasta ${endOf(d)}`).join(', ') : '');
-
-    const ppl = people();
-    if (state.filter !== null && !ppl.some(p => p.key === state.filter)) state.filter = null;
-    $('load').innerHTML = ppl.length > 0
-      ? `<button class="chip" data-filter="" aria-pressed="${state.filter===null}">Todos</button>` +
-        ppl.map(p => `<button class="chip${p.halves>10?' over':''}" data-filter="${esc(p.key)}" aria-pressed="${state.filter===p.key}" title="${esc(p.name)}: ${fmtDur(p.halves)} · ${fmtH(p.hours)}">${esc(p.name)} <span class="n">${fmtDur(p.halves)}</span></button>`).join('')
-      : '';
 
     let h = '<div class="grid head"><div class="corner"><span class="k">Tarea</span></div>';
     for (let d = 0; d < 5; d++) {
@@ -113,8 +80,7 @@
     }
     h += '</div>';
 
-    const conf = conflicts();
-    const list = sortedTasks(state.tasks.filter(t => state.filter === null || (whoKey(t) || '__none') === state.filter));
+    const list = sortedTasks(state.tasks);
     let bg = '';
     for (let s = 0; s < 10; s++) { const ext = s%2 && endOf(Math.floor(s/2)) !== BASE_END; bg += `<div class="cell ${s%2?'pm':'am'}${ext?' ext':''}" style="grid-column:${s+2}"></div>`; }
 
@@ -124,14 +90,12 @@
       h += `<div class="grid row"><div class="empty"><strong>Sin tareas esta semana</strong><span>${state.canWrite ? 'Agregá una con «Nueva tarea» o tocando un turno abajo.' : 'Cuando se carguen tareas, van a aparecer acá.'}</span></div></div>`;
     }
     for (const t of list) {
-      const s0 = startSlot(t), s1 = endSlot(t), c = conf[t.id];
-      const meta = [`<span>${esc(t.assignee.trim() || 'Sin asignar')}</span>`];
-      if (c) meta.push(`<span class="warn-txt" title="Se superpone con: ${esc(c.join(', '))}">· superpuesta</span>`);
-      h += `<div class="grid row task${c?' conflict':''}${state.canWrite?'':' ro'}" data-edit="${esc(t.id)}" ${state.canWrite?'tabindex="0" role="button"':''} aria-label="${esc(t.name)}, prioridad ${t.priority}, ${slotName(s0)} a ${slotName(s1)}">
+      const s0 = startSlot(t), s1 = endSlot(t);
+      h += `<div class="grid row task${state.canWrite?'':' ro'}" data-edit="${esc(t.id)}" ${state.canWrite?'tabindex="0" role="button"':''} aria-label="${esc(t.name)}, prioridad ${t.priority}, ${slotName(s0)} a ${slotName(s1)}">
         <div class="info"><span class="prio" style="--p:${prioColor(t.priority)}" title="Prioridad ${t.priority} · ${level(t.priority)}">${t.priority}</span>
-          <div class="txt"><span class="t">${esc(t.name)}</span>${t.desc?`<span class="d">${esc(t.desc)}</span>`:''}<span class="meta">${meta.join('')}</span></div></div>
+          <div class="txt"><span class="t">${esc(t.name)}</span>${t.desc?`<span class="d">${esc(t.desc)}</span>`:''}</div></div>
         ${bg}
-        <div class="bar" style="--p:${prioColor(t.priority)};grid-column:${s0+2} / span ${s1-s0+1}" title="${esc(t.name)} · ${slotName(s0)} → ${slotName(s1)} · ${fmtH(taskHours(t))}">${esc(t.assignee.trim() || t.name)}<small>${fmtDur(s1-s0+1)} · ${fmtH(taskHours(t))}</small></div>
+        <div class="bar" style="--p:${prioColor(t.priority)};grid-column:${s0+2} / span ${s1-s0+1}" title="${esc(t.name)} · ${slotName(s0)} → ${slotName(s1)} · ${fmtH(taskHours(t))}">${esc(t.name)}<small>${fmtDur(s1-s0+1)} · ${fmtH(taskHours(t))}</small></div>
       </div>`;
     }
     if (state.canWrite && state.mode !== 'pending') {
@@ -149,10 +113,8 @@
     $('import').disabled = state.mode === 'pending';
 
     const total = state.tasks.reduce((a,t) => a + taskHours(t), 0);
-    $('status').textContent = state.mode === 'pending' ? '' :
-      `${state.tasks.length} ${state.tasks.length===1?'tarea':'tareas'} · ${fmtH(total)}` + (state.mode === 'local' && !standalone ? ' · guardado en este navegador' : '');
-
-    $('people').innerHTML = [...new Set(state.tasks.map(t => t.assignee.trim()).filter(Boolean))].map(n => `<option value="${esc(n)}">`).join('');
+    $('status').textContent = state.mode === 'pending' ? 'Cargando…' :
+      `${state.tasks.length} ${state.tasks.length===1?'tarea':'tareas'} · ${fmtH(total)} planificadas` + (state.mode === 'local' && !standalone ? ' · guardado en este navegador' : '');
   }
 
   /* ---------- toast ---------- */
@@ -198,7 +160,7 @@
     else toast('No se pudo guardar. Probá de nuevo en unos segundos.');
   }
 
-  function taskBody(t){ return {week:t.week, name:t.name, desc:t.desc, priority:t.priority, assignee:t.assignee, day:t.day, half:t.half, dur:t.dur, updatedAt: Date.now()}; }
+  function taskBody(t){ return {week:t.week, name:t.name, desc:t.desc, priority:t.priority, day:t.day, half:t.half, dur:t.dur, updatedAt: Date.now()}; }
   async function putTask(t){
     const body = taskBody(t);
     if (state.mode === 'db') { try { await db.collection('tasks').doc(t.id).set(body); return true; } catch(e){ writeFailed(e); return false; } }
@@ -255,7 +217,8 @@
     editing = t;
     fillDays();
     $('dlgTitle').textContent = t.id ? 'Editar tarea' : 'Nueva tarea';
-    $('f-name').value = t.name || ''; $('f-desc').value = t.desc || ''; $('f-who').value = t.assignee || '';
+    $('f-name').value = t.name || ''; $('f-desc').value = t.desc || '';
+    resetAI();
     $('p' + (t.priority || 5)).checked = true;
     $('f-day').value = String(t.day || 0);
     $('h' + (t.half || 0)).checked = true;
@@ -280,12 +243,104 @@
     const name = $('f-name').value.trim();
     if (!name) { $('f-name').setCustomValidity('Escribí un nombre para la tarea'); $('f-name').reportValidity(); return; }
     const v = formVals();
-    const t = normTask(editing.id || newId(), {week: state.week, name, desc: $('f-desc').value.trim(), assignee: $('f-who').value.trim(), ...v});
+    const t = normTask(editing.id || newId(), {week: state.week, name, desc: $('f-desc').value.trim(), ...v});
     const isNew = !editing.id;
     dlg.close();
     if (await putTask(t)) toast(isNew ? 'Tarea agregada' : 'Cambios guardados');
   });
   $('f-name').addEventListener('input', () => $('f-name').setCustomValidity(''));
+
+  /* ---------- IA para descripciones ---------- */
+  const KEY_STORE = 'cronograma.geminiKey';
+  const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
+  let aiSample = null, aiPrev = null, aiBusy = false;
+  const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; } };
+  const setKey = k => { try { k ? localStorage.setItem(KEY_STORE, k) : localStorage.removeItem(KEY_STORE); } catch {} };
+  function aiPrompt(name, points){
+    return `Sos un asistente que redacta descripciones de tareas para un cronograma de trabajo semanal.
+
+Tarea: ${name || '(sin nombre)'}
+Puntos clave que escribió la persona:
+${points}
+
+Escribí una descripción clara y profesional en español de Argentina, de 60 a 120 palabras, en un solo párrafo. Desarrollá esos puntos: qué se hace, cómo se encara y qué resultado se espera. No inventes datos concretos (nombres, cifras, fechas, lugares) que no estén en los puntos. Devolvé solo el texto de la descripción, sin título, sin comillas y sin viñetas.`;
+  }
+  async function gemini(prompt, key){
+    let last = {code:'http'};
+    for (const model of GEMINI_MODELS) {
+      let res;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method:'POST', headers:{'Content-Type':'application/json', 'x-goog-api-key': key},
+          body: JSON.stringify({contents:[{role:'user', parts:[{text: prompt}]}], generationConfig:{temperature:0.6}})
+        });
+      } catch { throw {code:'network'}; }
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 404) { last = {code:'model'}; continue; }
+      if (!res.ok) {
+        const msg = (j.error && j.error.message) || '';
+        if (res.status === 401 || res.status === 403 || /api key/i.test(msg)) throw {code:'key'};
+        if (res.status === 429) throw {code:'quota'};
+        throw {code:'http', message: msg};
+      }
+      const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+      return parts.filter(x => !x.thought).map(x => x.text || '').join('').trim();
+    }
+    throw last;
+  }
+  function resetAI(){
+    aiPrev = null;
+    $('aiUndo').hidden = true; $('aiKey').hidden = true; $('f-key').value = '';
+    $('aiGen').hidden = !(aiSample || standalone);
+    $('aiKeyChange').hidden = !(standalone && !aiSample && getKey());
+  }
+  async function runAI(){
+    if (aiBusy) return;
+    const points = $('f-desc').value.trim();
+    if (!points) { toast('Escribí primero los puntos clave en la descripción.'); $('f-desc').focus(); return; }
+    let key = '';
+    if (!aiSample) {
+      key = getKey();
+      if (!key) { $('aiKey').hidden = false; $('f-key').focus(); return; }
+    }
+    aiBusy = true;
+    const btn = $('aiGen'), lbl = btn.querySelector('span');
+    btn.disabled = true; lbl.textContent = 'Generando…';
+    $('f-desc').readOnly = true; $('f-desc').classList.add('busy');
+    try {
+      const prompt = aiPrompt($('f-name').value.trim(), points);
+      let text;
+      if (aiSample) { const r = await aiSample(prompt, {modelTier:'quick'}); text = ((r && r.text) || '').trim(); }
+      else text = await gemini(prompt, key);
+      text = (text || '').replace(/^["“«]+|["”»]+$/g, '').trim();
+      if (!text) throw {code:'empty'};
+      aiPrev = $('f-desc').value;
+      $('f-desc').value = text.slice(0, 2000);
+      $('aiUndo').hidden = false;
+    } catch (e) {
+      const c = e && e.code;
+      if (c === 'key') { setKey(''); $('aiKeyChange').hidden = true; $('aiKey').hidden = false; $('f-key').focus(); toast('La API key no es válida o no tiene permiso. Pegá una nueva.'); }
+      else if (c === 'quota' || c === 'rate_limited') toast('Se alcanzó el límite de uso de la IA. Probá de nuevo en un rato.');
+      else if (c === 'not_granted') toast('No se dio permiso para usar la IA en esta página.');
+      else if (c === 'network') toast('No hay conexión con Gemini. Revisá internet y probá de nuevo.');
+      else if (c === 'empty') toast('La IA no devolvió texto. Probá de nuevo o ajustá los puntos.');
+      else if (c === 'model') toast('El modelo de Gemini no está disponible para tu API key.');
+      else toast('No se pudo generar la descripción. Probá de nuevo.');
+    } finally {
+      aiBusy = false; btn.disabled = false; lbl.textContent = 'Generar con IA';
+      $('f-desc').readOnly = false; $('f-desc').classList.remove('busy');
+    }
+  }
+  $('aiGen').addEventListener('click', runAI);
+  $('aiUndo').addEventListener('click', () => { if (aiPrev !== null) $('f-desc').value = aiPrev; aiPrev = null; $('aiUndo').hidden = true; });
+  $('aiKeyChange').addEventListener('click', () => { $('aiKey').hidden = false; $('f-key').focus(); });
+  $('keySave').addEventListener('click', () => {
+    const k = $('f-key').value.trim();
+    if (!k) { $('f-key').focus(); return; }
+    setKey(k); $('f-key').value = ''; $('aiKey').hidden = true; $('aiKeyChange').hidden = false;
+    runAI();
+  });
+  $('f-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('keySave').click(); } });
 
   /* ---------- events ---------- */
   $('board').addEventListener('click', e => {
@@ -301,14 +356,10 @@
   $('board').addEventListener('change', e => {
     const s = e.target.closest('select[data-end]'); if (s) setEnd(Number(s.dataset.end), s.value);
   });
-  $('load').addEventListener('click', e => {
-    const c = e.target.closest('[data-filter]'); if (!c) return;
-    const k = c.dataset.filter; state.filter = (k === '' || state.filter === k) ? null : k; render();
-  });
   $('sortStart').addEventListener('click', () => { state.sort = 'start'; render(); });
   $('sortPrio').addEventListener('click', () => { state.sort = 'prio'; render(); });
   $('newTask').addEventListener('click', () => openDialog({day:0, half:0, dur:2, priority:5}));
-  const goWeek = wk => { state.week = wk; state.filter = null; subscribe(); };
+  const goWeek = wk => { state.week = wk; subscribe(); };
   $('prev').addEventListener('click', () => goWeek(iso(addDays(parseISO(state.week), -7))));
   $('next').addEventListener('click', () => goWeek(iso(addDays(parseISO(state.week), 7))));
   $('thisWeek').addEventListener('click', () => goWeek(iso(mondayOf(new Date()))));
@@ -352,31 +403,36 @@
     } finally { btn.disabled = false; lbl.textContent = label; }
   }
 
-  async function buildWorkbook(){
-    const X = window.ExcelJS;
-    const wb = new X.Workbook(); wb.creator = 'Cronograma semanal'; wb.created = new Date();
-    const C = {ink:'18181B', head:'27272A', soft:'F4F4F5', line:'E4E4E7', hair:'EFEFF1', zebra:'FAFAFA', ext:'FBF3E2', extLight:'FDF9F0', extInk:'8A6A1F', muted:'71717A', white:'FFFFFF', warn:'C2410C'};
+  /* Paleta y helpers de estilo para los Excel */
+  function xlKit(){
+    const C = {ink:'18181B', head:'27272A', soft:'F4F4F5', soft2:'FAFAFA', line:'E4E4E7', hair:'EFEFF1', zebra:'FAFAFA',
+      ext:'FBF3E2', extLight:'FDF9F0', extInk:'8A6A1F', muted:'71717A', white:'FFFFFF'};
     const A = h => 'FF' + h.replace('#','').toUpperCase();
     const fill = h => ({type:'pattern', pattern:'solid', fgColor:{argb:A(h)}});
     const side = (h, style='thin') => ({style, color:{argb:A(h)}});
     const box = (h, style) => ({top:side(h,style), left:side(h,style), bottom:side(h,style), right:side(h,style)});
     const font = (o={}) => { const {color, ...rest} = o; return {name:'Calibri', size:11, ...rest, color:{argb:A(color || C.ink)}}; };
+    return {C, A, fill, side, box, font};
+  }
+  const byStart = list => list.slice().sort((x,y) => startSlot(x) - startSlot(y) || y.priority - x.priority || x.name.localeCompare(y.name));
+
+  /* Excel completo: cronograma tipo Gantt + detalle */
+  async function buildWorkbook(){
+    const X = window.ExcelJS, {C, A, fill, side, box, font} = xlKit();
+    const wb = new X.Workbook(); wb.creator = 'Cronograma semanal'; wb.created = new Date();
     const mon = parseISO(state.week);
     const tasks = sortedTasks(state.tasks);
-    const conf = conflicts();
     const extDays = [0,1,2,3,4].filter(d => endOf(d) !== BASE_END);
     const wkLong = weekLabel(state.week, true);
-    const totalCap = Array.from({length:10}, (_,s) => slotHours(s)).reduce((a,b) => a+b, 0);
+    const S0 = 4, LAST = 13; // primera columna de turnos y última columna
 
-    /* Hoja 1: Cronograma */
     const ws = wb.addWorksheet('Cronograma', {
-      views:[{state:'frozen', xSplit:4, ySplit:5, showGridLines:false}],
+      views:[{state:'frozen', xSplit:3, ySplit:5, showGridLines:false}],
       pageSetup:{paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true,
         margins:{left:0.4, right:0.4, top:0.5, bottom:0.5, header:0.3, footer:0.3}, printTitlesRow:'4:5'},
       headerFooter:{oddFooter:'&L&8Cronograma semanal · ' + weekLabel(state.week) + '&R&8Página &P de &N'}
     });
-    ws.columns = [{width:5},{width:38},{width:18},{width:9}, ...Array.from({length:10}, () => ({width:15}))];
-    const LAST = 14;
+    ws.columns = [{width:5},{width:42},{width:9}, ...Array.from({length:10}, () => ({width:15}))];
     ws.mergeCells(1,1,1,LAST);
     Object.assign(ws.getCell(1,1), {value:'Cronograma semanal', font:font({size:18, bold:true}), alignment:{vertical:'middle'}});
     ws.getRow(1).height = 30;
@@ -386,13 +442,13 @@
       font:font({size:10, color:C.muted}), alignment:{vertical:'middle'}});
     ws.getRow(2).height = 20; ws.getRow(3).height = 8;
 
-    [[1,'#'],[2,'Tarea'],[3,'Asignado'],[4,'Prior.']].forEach(([c,l]) => {
+    [[1,'#'],[2,'Tarea'],[3,'Prior.']].forEach(([c,l]) => {
       ws.mergeCells(4,c,5,c);
       Object.assign(ws.getCell(4,c), {value:l, fill:fill(C.head), font:font({bold:true, color:C.white}),
-        alignment:{vertical:'middle', horizontal: c===2||c===3 ? 'left' : 'center', indent: c===2||c===3 ? 1 : 0}, border:box(C.head)});
+        alignment:{vertical:'middle', horizontal: c===2 ? 'left' : 'center', indent: c===2 ? 1 : 0}, border:box(C.head)});
     });
     for (let d = 0; d < 5; d++) {
-      const c = 5 + d*2, date = addDays(mon, d), ext = endOf(d) !== BASE_END;
+      const c = S0 + d*2, date = addDays(mon, d), ext = endOf(d) !== BASE_END;
       ws.mergeCells(4,c,4,c+1);
       Object.assign(ws.getCell(4,c), {value:`${DAYS[d]} ${pad(date.getDate())}/${pad(date.getMonth()+1)}` + (ext ? `  ·  hasta ${endOf(d)}` : ''),
         fill:fill(C.head), font:font({bold:true, color:C.white}), alignment:{vertical:'middle', horizontal:'center'},
@@ -417,100 +473,76 @@
       Object.assign(ws.getCell(r,1), {value:i+1, fill:z, font:font({size:10, color:C.muted}), alignment:{horizontal:'center', vertical:'middle'}, border:{bottom}});
       const nc = ws.getCell(r,2);
       Object.assign(nc, {value:t.name, fill:z, font:font({bold:true}), alignment:{vertical:'middle', indent:1, wrapText:true}, border:{bottom}});
-      if (t.desc || conf[t.id]) nc.note = [t.desc, conf[t.id] ? 'Se superpone con: ' + conf[t.id].join(', ') : ''].filter(Boolean).join('\n\n');
-      Object.assign(ws.getCell(r,3), {value:t.assignee || 'Sin asignar', fill:z, font:font({color: t.assignee ? C.ink : C.muted, italic: !t.assignee}), alignment:{vertical:'middle', indent:1}, border:{bottom}});
-      Object.assign(ws.getCell(r,4), {value:t.priority, fill:fill(prioColor(t.priority)), font:font({bold:true}), alignment:{horizontal:'center', vertical:'middle'},
+      if (t.desc) nc.note = t.desc;
+      Object.assign(ws.getCell(r,3), {value:t.priority, fill:fill(prioColor(t.priority)), font:font({bold:true}), alignment:{horizontal:'center', vertical:'middle'},
         border:{bottom:side(C.white,'medium'), top:side(C.white,'medium'), right:side(C.line)}});
       for (let s = 0; s < 10; s++) {
         const ext = s%2 && endOf(Math.floor(s/2)) !== BASE_END;
-        Object.assign(ws.getCell(r,5+s), {fill: ext ? fill(C.extLight) : z,
+        Object.assign(ws.getCell(r,S0+s), {fill: ext ? fill(C.extLight) : z,
           border: s%2 ? {bottom, left:side(C.hair,'hair'), right:side(C.line)} : {bottom, left:side(C.line)}});
       }
       const s0 = startSlot(t), s1 = endSlot(t);
-      if (s1 > s0) ws.mergeCells(r, 5+s0, r, 5+s1);
-      const warn = !!conf[t.id];
-      Object.assign(ws.getCell(r,5+s0), {value:`${fmtDur(s1-s0+1)} · ${fmtH(taskHours(t))}`, fill:fill(prioColor(t.priority)),
+      if (s1 > s0) ws.mergeCells(r, S0+s0, r, S0+s1);
+      Object.assign(ws.getCell(r,S0+s0), {value:`${fmtDur(s1-s0+1)} · ${fmtH(taskHours(t))}`, fill:fill(prioColor(t.priority)),
         font:font({bold:true, size:10}), alignment:{horizontal:'center', vertical:'middle', shrinkToFit:true},
-        border:{top:side(C.white,'thick'), bottom:side(C.white,'thick'), left:side(warn ? C.warn : C.white, warn ? 'medium' : 'thin'), right:side(warn ? C.warn : C.white, warn ? 'medium' : 'thin')}});
+        border:{top:side(C.white,'thick'), bottom:side(C.white,'thick'), left:side(C.white), right:side(C.white)}});
       r++;
     });
 
     ws.getRow(r).height = 22;
-    ws.mergeCells(r,1,r,4);
+    ws.mergeCells(r,1,r,3);
     Object.assign(ws.getCell(r,1), {value:'Tareas por turno', font:font({bold:true, size:10}), fill:fill(C.soft), alignment:{horizontal:'right', vertical:'middle', indent:1}, border:{top:side(C.ink)}});
     for (let s = 0; s < 10; s++) {
       const n = tasks.filter(t => startSlot(t) <= s && endSlot(t) >= s).length;
-      Object.assign(ws.getCell(r,5+s), {value:n, font:font({bold:true, size:10, color: n ? C.ink : C.muted}), fill:fill(C.soft), alignment:{horizontal:'center', vertical:'middle'}, border:{top:side(C.ink)}});
+      Object.assign(ws.getCell(r,S0+s), {value:n, font:font({bold:true, size:10, color: n ? C.ink : C.muted}), fill:fill(C.soft), alignment:{horizontal:'center', vertical:'middle'}, border:{top:side(C.ink)}});
     }
     r += 2;
     Object.assign(ws.getCell(r,2), {value:'Prioridad (1 baja · 10 crítica)', font:font({size:9, color:C.muted}), alignment:{horizontal:'right', vertical:'middle'}});
-    for (let p = 1; p <= 10; p++) Object.assign(ws.getCell(r,4+p), {value:p, fill:fill(prioColor(p)), font:font({bold:true, size:9}), alignment:{horizontal:'center', vertical:'middle'}, border:box(C.white,'medium')});
+    for (let p = 1; p <= 10; p++) Object.assign(ws.getCell(r,3+p), {value:p, fill:fill(prioColor(p)), font:font({bold:true, size:9}), alignment:{horizontal:'center', vertical:'middle'}, border:box(C.white,'medium')});
     r++;
     Object.assign(ws.getCell(r,2), {value:'Turno extendido', font:font({size:9, color:C.muted}), alignment:{horizontal:'right', vertical:'middle'}});
-    Object.assign(ws.getCell(r,5), {fill:fill(C.ext), border:box('E9DDBF')});
+    Object.assign(ws.getCell(r,S0), {fill:fill(C.ext), border:box('E9DDBF')});
 
     /* Hoja 2: Detalle */
     const wd = wb.addWorksheet('Detalle', {views:[{state:'frozen', ySplit:4, showGridLines:false}],
       pageSetup:{paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    const cols = [['Tarea',30],['Descripción',52],['Prioridad',10],['Nivel',10],['Asignado',18],['Inicio',20],['Fin',20],['Duración',11],['Horas',9]];
+    const cols = [['Tarea',32],['Descripción',60],['Prioridad',10],['Nivel',10],['Inicio',20],['Fin',20],['Duración',11],['Horas',9]];
     wd.columns = cols.map(([,w]) => ({width:w}));
     wd.mergeCells(1,1,1,cols.length);
     Object.assign(wd.getCell(1,1), {value:'Detalle de tareas', font:font({size:16, bold:true})}); wd.getRow(1).height = 26;
     wd.mergeCells(2,1,2,cols.length);
     Object.assign(wd.getCell(2,1), {value:`Semana del ${wkLong}`, font:font({size:10, color:C.muted})});
     wd.getRow(4).height = 24;
-    const center = i => i >= 2 && i !== 4;
+    const center = i => i >= 2;
     cols.forEach(([l], i) => Object.assign(wd.getCell(4,i+1), {value:l, fill:fill(C.head), font:font({bold:true, color:C.white}), alignment:{vertical:'middle', horizontal: center(i) ? 'center' : 'left', indent: center(i) ? 0 : 1}, border:box(C.head)}));
     let dr = 5;
     tasks.forEach((t, i) => {
       const z = i % 2 ? fill(C.zebra) : fill(C.white);
-      const vals = [t.name, t.desc || '—', t.priority, level(t.priority), t.assignee || 'Sin asignar', slotName(startSlot(t)), slotName(endSlot(t)), fmtDur(endSlot(t)-startSlot(t)+1), Math.round(taskHours(t)*10)/10];
+      const vals = [t.name, t.desc || '—', t.priority, level(t.priority), slotName(startSlot(t)), slotName(endSlot(t)), fmtDur(endSlot(t)-startSlot(t)+1), Math.round(taskHours(t)*10)/10];
       vals.forEach((v, c) => Object.assign(wd.getCell(dr, c+1), {value:v, fill:z, border:{bottom:side(C.hair)},
         alignment:{vertical:'top', wrapText: c < 2, horizontal: center(c) ? 'center' : 'left', indent: center(c) ? 0 : 1},
         font:font({bold: c===0, color: c===1 && !t.desc ? C.muted : C.ink})}));
       wd.getCell(dr,3).fill = fill(prioColor(t.priority)); wd.getCell(dr,3).font = font({bold:true});
-      wd.getCell(dr,9).numFmt = '0.0';
-      const lines = Math.max(1, Math.ceil((t.desc || '').length / 58), Math.ceil(t.name.length / 32));
+      wd.getCell(dr,8).numFmt = '0.0';
+      const lines = Math.max(1, textLines(t.desc || '', 68), textLines(t.name, 34));
       wd.getRow(dr).height = Math.max(22, 15 * lines + 6);
       dr++;
     });
     if (tasks.length) {
       wd.autoFilter = {from:{row:4, column:1}, to:{row:dr-1, column:cols.length}};
-      wd.mergeCells(dr,1,dr,8);
+      wd.mergeCells(dr,1,dr,7);
       Object.assign(wd.getCell(dr,1), {value:'Total de horas planificadas', font:font({bold:true}), fill:fill(C.soft), alignment:{horizontal:'right', indent:1, vertical:'middle'}, border:{top:side(C.ink)}});
       const tot = tasks.reduce((a,t) => a + taskHours(t), 0);
-      Object.assign(wd.getCell(dr,9), {value:{formula:`SUM(I5:I${dr-1})`, result: Math.round(tot*10)/10}, numFmt:'0.0', font:font({bold:true}), fill:fill(C.soft), alignment:{horizontal:'center', vertical:'middle'}, border:{top:side(C.ink)}});
+      Object.assign(wd.getCell(dr,8), {value:{formula:`SUM(H5:H${dr-1})`, result: Math.round(tot*10)/10}, numFmt:'0.0', font:font({bold:true}), fill:fill(C.soft), alignment:{horizontal:'center', vertical:'middle'}, border:{top:side(C.ink)}});
       wd.getRow(dr).height = 24;
     }
 
-    /* Hoja 3: Carga por persona */
-    const wc = wb.addWorksheet('Carga por persona', {views:[{showGridLines:false}]});
-    const ccols = [['Asignado',24],['Tareas',10],['Medios días',13],['Días',10],['Horas',10],['Capacidad (h)',14],['Ocupación',13]];
-    wc.columns = ccols.map(([,w]) => ({width:w}));
-    wc.mergeCells(1,1,1,ccols.length);
-    Object.assign(wc.getCell(1,1), {value:'Carga por persona', font:font({size:16, bold:true})}); wc.getRow(1).height = 26;
-    wc.mergeCells(2,1,2,ccols.length);
-    Object.assign(wc.getCell(2,1), {value:`Semana del ${wkLong} · capacidad semanal ${fmtH(totalCap)} por persona`, font:font({size:10, color:C.muted})});
-    ccols.forEach(([l], i) => Object.assign(wc.getCell(4,i+1), {value:l, fill:fill(C.head), font:font({bold:true, color:C.white}), alignment:{vertical:'middle', horizontal: i ? 'center' : 'left', indent: i ? 0 : 1}, border:box(C.head)}));
-    wc.getRow(4).height = 24;
-    let cr = 5;
-    people().forEach((p, i) => {
-      const z = i % 2 ? fill(C.zebra) : fill(C.white);
-      const occ = totalCap ? p.hours / totalCap : 0;
-      const vals = [p.name, p.count, p.halves, p.halves/2, Math.round(p.hours*10)/10, Math.round(totalCap*10)/10, occ];
-      vals.forEach((v, c) => Object.assign(wc.getCell(cr, c+1), {value:v, fill:z, font:font({bold: c===0}), border:{bottom:side(C.hair)},
-        alignment:{vertical:'middle', horizontal: c ? 'center' : 'left', indent: c ? 0 : 1}}));
-      wc.getCell(cr,4).numFmt = '0.0'; wc.getCell(cr,5).numFmt = '0.0'; wc.getCell(cr,6).numFmt = '0.0';
-      const oc = wc.getCell(cr,7); oc.numFmt = '0%';
-      oc.fill = fill(occ > 1 ? 'FBE1DA' : occ >= 0.8 ? 'FBF0D6' : 'E8F3EC');
-      oc.font = font({bold:true, color: occ > 1 ? C.warn : C.ink});
-      wc.getRow(cr).height = 22;
-      cr++;
-    });
-    if (cr === 5) { wc.mergeCells(5,1,5,ccols.length); Object.assign(wc.getCell(5,1), {value:'Sin tareas asignadas.', font:font({italic:true, color:C.muted}), alignment:{horizontal:'center'}}); }
-
     addConfig(wb);
     return wb.xlsx.writeBuffer();
+  }
+
+  function textLines(text, perLine){
+    return String(text).split(/\r?\n/).reduce((a, l) => a + Math.max(1, Math.ceil(l.length / perLine)), 0);
   }
 
   /* Hoja oculta con la semana y los horarios, para poder volver a cargar el archivo */
@@ -522,39 +554,71 @@
     rows.forEach(([k, v], i) => { c.getCell(i+1, 1).value = k; c.getCell(i+1, 2).value = v; });
   }
 
-  /* Excel simple: día, mañana y tarde con el nombre de las tareas */
+  /* Excel para enviar: día, turno, tarea y descripción */
   async function buildSimple(){
-    const X = window.ExcelJS;
+    const X = window.ExcelJS, {C, fill, side, font} = xlKit();
     const wb = new X.Workbook(); wb.creator = 'Cronograma semanal'; wb.created = new Date();
-    const ink = 'FF18181B', muted = 'FF71717A', line = 'FFE4E4E7';
-    const f = (o={}) => ({name:'Calibri', size:11, color:{argb: o.c || ink}, bold: !!o.b, italic: !!o.i, size: o.s || 11});
     const mon = parseISO(state.week);
-    const ws = wb.addWorksheet('Planificación', {views:[{showGridLines:false}],
+    const tasks = byStart(state.tasks);
+    const extDays = [0,1,2,3,4].filter(d => endOf(d) !== BASE_END);
+    const ws = wb.addWorksheet('Planificación', {
+      views:[{state:'frozen', ySplit:4, showGridLines:false}],
       pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true,
-        margins:{left:0.5, right:0.5, top:0.6, bottom:0.6, header:0.3, footer:0.3}}});
-    ws.columns = [{width:16},{width:46},{width:46}];
-    ws.mergeCells(1,1,1,3);
-    Object.assign(ws.getCell(1,1), {value:'Planificación semanal', font:f({s:16, b:true}), alignment:{vertical:'middle'}});
-    ws.getRow(1).height = 26;
-    ws.mergeCells(2,1,2,3);
-    Object.assign(ws.getCell(2,1), {value:'Semana del ' + weekLabel(state.week, true), font:f({s:10.5, c:muted})});
-    ws.getRow(3).height = 10;
-    ['Día','Mañana','Tarde'].forEach((h, i) => Object.assign(ws.getCell(4, i+1), {value:h, font:f({b:true}),
-      fill:{type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F4F5'}}, alignment:{vertical:'middle', indent:1},
-      border:{bottom:{style:'thin', color:{argb:ink}}}}));
-    ws.getRow(4).height = 24;
-    const inSlot = s => sortedTasks(state.tasks).filter(t => startSlot(t) <= s && endSlot(t) >= s).map(t => t.name);
+        margins:{left:0.45, right:0.45, top:0.55, bottom:0.55, header:0.3, footer:0.3}, printTitlesRow:'4:4'},
+      headerFooter:{oddFooter:'&L&8Planificación semanal · ' + weekLabel(state.week) + '&R&8Página &P de &N'}
+    });
+    ws.columns = [{width:14},{width:16},{width:32},{width:70}];
+
+    ws.mergeCells(1,1,1,4);
+    Object.assign(ws.getCell(1,1), {value:'Planificación semanal', font:font({size:18, bold:true}), alignment:{vertical:'middle'}});
+    ws.getRow(1).height = 30;
+    ws.mergeCells(2,1,2,4);
+    Object.assign(ws.getCell(2,1), {value:`Semana del ${weekLabel(state.week, true)}`, font:font({size:11, color:C.muted}), alignment:{vertical:'middle'}});
+    ws.getRow(2).height = 20; ws.getRow(3).height = 10;
+    ['Día','Turno','Tarea','Descripción'].forEach((h, i) => Object.assign(ws.getCell(4, i+1), {value:h, fill:fill(C.head),
+      font:font({bold:true, color:C.white}), alignment:{vertical:'middle', indent:1}, border:{bottom:side(C.head)}}));
+    ws.getRow(4).height = 26;
+
+    let r = 5;
     for (let d = 0; d < 5; d++) {
-      const r = 5 + d, date = addDays(mon, d);
-      const am = inSlot(d*2), pm = inSlot(d*2+1);
-      const border = {bottom:{style:'thin', color:{argb:line}}};
-      Object.assign(ws.getCell(r,1), {value:`${DAYS[d]}\n${pad(date.getDate())}/${pad(date.getMonth()+1)}`, font:f({b:true}), alignment:{vertical:'top', wrapText:true, indent:1}, border});
-      [am, pm].forEach((list, i) => Object.assign(ws.getCell(r, i+2), {
-        value: list.length ? list.map(n => '• ' + n).join('\n') : '—',
-        font: list.length ? f() : f({c:muted}), alignment:{vertical:'top', wrapText:true, indent:1}, border}));
-      const lines = Math.max(2, am.length, pm.length) + am.concat(pm).filter(n => n.length > 44).length;
-      ws.getRow(r).height = Math.max(36, lines * 15 + 12);
+      const dayStart = r, date = addDays(mon, d);
+      for (let half = 0; half < 2; half++) {
+        const s = d*2 + half, turnStart = r, ext = half && endOf(d) !== BASE_END;
+        const items = tasks.filter(t => startSlot(t) <= s && endSlot(t) >= s);
+        const rows = items.length ? items.map(t => {
+          const cont = startSlot(t) !== s;
+          return {name:t.name, cont, desc: cont ? `↳ Continúa desde el ${slotName(startSlot(t)).toLowerCase()}` : (t.desc || '—'), noDesc: !cont && !t.desc};
+        }) : [{name:'—', empty:true, desc:''}];
+        for (const it of rows) {
+          const top = r === dayStart ? side(C.ink, 'medium') : r === turnStart ? side(C.line) : side(C.hair);
+          ws.getCell(r,1).border = {top};
+          ws.getCell(r,1).fill = fill(C.soft);
+          ws.getCell(r,2).border = {top: r === dayStart ? top : side(C.line)};
+          ws.getCell(r,2).fill = fill(ext ? C.ext : C.soft2);
+          Object.assign(ws.getCell(r,3), {value:it.name, border:{top},
+            font:font({bold: !it.empty && !it.cont, color: it.empty ? C.muted : C.ink}),
+            alignment:{vertical:'top', wrapText:true, indent:1}});
+          Object.assign(ws.getCell(r,4), {value:it.desc, border:{top},
+            font:font({size:10.5, italic: !!it.cont, color: (it.cont || it.noDesc) ? C.muted : C.ink}),
+            alignment:{vertical:'top', wrapText:true, indent:1}});
+          const lines = Math.max(textLines(it.desc, 82), textLines(it.name, 30));
+          ws.getRow(r).height = Math.max(32, 14.5 * lines + 10);
+          r++;
+        }
+        if (r - 1 > turnStart) ws.mergeCells(turnStart, 2, r - 1, 2);
+        Object.assign(ws.getCell(turnStart, 2), {value:`${half ? 'Tarde' : 'Mañana'}\n${half ? MID + '–' + endOf(d) : START + '–' + MID}`,
+          font:font({bold:true, size:10, color: ext ? C.extInk : C.ink}), alignment:{vertical:'top', wrapText:true, indent:1}});
+      }
+      if (r - 1 > dayStart) ws.mergeCells(dayStart, 1, r - 1, 1);
+      Object.assign(ws.getCell(dayStart, 1), {value:`${DAYS[d]}\n${pad(date.getDate())}/${pad(date.getMonth()+1)}`,
+        font:font({bold:true, size:11.5}), alignment:{vertical:'top', wrapText:true, indent:1}});
     }
+    for (let c = 1; c <= 4; c++) ws.getCell(r, c).border = {top:side(C.ink, 'medium')};
+    ws.mergeCells(r + 1, 1, r + 1, 4);
+    Object.assign(ws.getCell(r + 1, 1), {
+      value:'Horario 08:00 a 17:00 · Mañana 08:00–12:30 · Tarde 12:30–17:00' + (extDays.length ? ' · Extendido: ' + extDays.map(d => DAYS[d] + ' hasta ' + endOf(d)).join(', ') : ''),
+      font:font({size:9, italic:true, color:C.muted})});
+
     addConfig(wb);
     return wb.xlsx.writeBuffer();
   }
@@ -592,34 +656,53 @@
       if (!name || s0 === null) continue;
       const s1 = parseSlot(get('fin'));
       const dur = (s1 !== null && s1 >= s0) ? s1 - s0 + 1 : (parseDur(get('duracion')) || 1);
-      const who = cellText(get('asignado')).trim(), desc = cellText(get('descripcion')).trim();
+      const desc = cellText(get('descripcion')).trim();
       out.push({name, desc: desc === '—' ? '' : desc, priority: clampInt(parseFloat(cellText(get('prioridad')).replace(',', '.')), 1, 10, 5),
-        assignee: norm(who) === 'sin asignar' ? '' : who, day: Math.floor(s0/2), half: s0 % 2, dur: Math.min(dur, 10 - s0)});
+        assignee: '', day: Math.floor(s0/2), half: s0 % 2, dur: Math.min(dur, 10 - s0)});
+    }
+    return out;
+  }
+  function slotRuns(slots, descs){
+    const out = [];
+    for (const [name, set] of slots) {
+      const arr = [...set].sort((a,b) => a-b);
+      let st = arr[0], prev = arr[0], first = true;
+      for (const s of arr.slice(1).concat([null])) {
+        if (s === prev + 1) { prev = s; continue; }
+        out.push({name, desc: first ? (descs.get(name) || '') : '', priority:5, assignee:'', day: Math.floor(st/2), half: st % 2, dur: prev - st + 1});
+        first = false; st = prev = s;
+      }
     }
     return out;
   }
   function parseSimple(ws){
-    const h = findHeader(ws, ['dia','manana','tarde']); if (!h) return [];
-    const slots = new Map();
-    for (let r = h.row + 1; r <= ws.rowCount; r++) {
-      const row = ws.getRow(r), d = parseSlot(row.getCell(h.map['dia']).value);
+    const slots = new Map(), descs = new Map();
+    const add = (name, s) => { if (!slots.has(name)) slots.set(name, new Set()); slots.get(name).add(s); };
+    const h = findHeader(ws, ['dia','turno','tarea']);
+    if (h) {
+      for (let r = h.row + 1; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r), d = parseSlot(row.getCell(h.map['dia']).value);
+        if (d === null) continue;
+        const half = norm(row.getCell(h.map['turno']).value).startsWith('tarde') ? 1 : 0;
+        const name = cellText(row.getCell(h.map['tarea']).value).trim();
+        if (!name || name === '—') continue;
+        add(name, d + half);
+        const ds = h.map['descripcion'] ? cellText(row.getCell(h.map['descripcion']).value).trim() : '';
+        if (ds && ds !== '—' && !ds.startsWith('↳') && !descs.has(name)) descs.set(name, ds);
+      }
+      return slotRuns(slots, descs);
+    }
+    const o = findHeader(ws, ['dia','manana','tarde']);
+    if (!o) return [];
+    for (let r = o.row + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r), d = parseSlot(row.getCell(o.map['dia']).value);
       if (d === null) continue;
       [['manana',0],['tarde',1]].forEach(([k, half]) => {
-        cellText(row.getCell(h.map[k]).value).split(/\r?\n/).map(x => x.replace(/^[•\-\*·]\s*/, '').trim())
-          .filter(x => x && x !== '—').forEach(n => { if (!slots.has(n)) slots.set(n, new Set()); slots.get(n).add(d + half); });
+        cellText(row.getCell(o.map[k]).value).split(/\r?\n/).map(x => x.replace(/^[•\-\*·]\s*/, '').trim())
+          .filter(x => x && x !== '—').forEach(n => add(n, d + half));
       });
     }
-    const out = [];
-    for (const [name, set] of slots) {
-      const arr = [...set].sort((a,b) => a-b);
-      let st = arr[0], prev = arr[0];
-      for (const s of arr.slice(1).concat([null])) {
-        if (s === prev + 1) { prev = s; continue; }
-        out.push({name, desc:'', priority:5, assignee:'', day: Math.floor(st/2), half: st % 2, dur: prev - st + 1});
-        st = prev = s;
-      }
-    }
-    return out;
+    return slotRuns(slots, descs);
   }
   async function readWorkbook(buf){
     const wb = new window.ExcelJS.Workbook(); await wb.xlsx.load(buf);
@@ -665,7 +748,7 @@
       $('impList').innerHTML = sorted.slice(0, 12).map(t => `<li><span class="w">${slotName(startSlot(t))}</span><span class="n">${esc(t.name)}</span></li>`).join('') +
         (sorted.length > 12 ? `<li class="more">y ${sorted.length - 12} más</li>` : '');
       $('impHint').textContent = (data.week ? '' : 'El archivo no indica la semana: se carga en la que estás viendo. ') +
-        (data.source === 'simple' ? 'Es un Excel simple: se cargan solo nombres, días y turnos. Prioridad y asignado quedan para completar.' : 'Se toman los datos de la hoja «Detalle», con los cambios que le hayas hecho en Excel.');
+        (data.source === 'simple' ? 'Es un Excel simple: se cargan nombres, descripciones, días y turnos. La prioridad queda en 5 para que la ajustes.' : 'Se toman los datos de la hoja «Detalle», con los cambios que le hayas hecho en Excel.');
       $('impAdd').hidden = !existing.length;
       $('impReplace').textContent = existing.length ? 'Reemplazar semana' : 'Cargar';
       $('impDlg').showModal();
@@ -714,6 +797,7 @@
       standalone = true; loadLocal(); state.mode = 'local'; subscribe();
       setExportReady(true); return;
     }
+    C.use('sample').then(sm => { aiSample = sm; }).catch(() => {});
     C.use('downloads').then(d => {
       downloads = d;
       setExportReady(!!d);

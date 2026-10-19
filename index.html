@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0E0E10">
-  <meta name="description" content="Cronograma semanal de tareas por medios días, con prioridad, asignación y exportación a Excel.">
+  <meta name="description" content="Cronograma semanal de tareas por medios días, con prioridad, descripciones con IA y exportación a Excel.">
   <title>Cronograma Semanal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,11 +33,11 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3m0 0L5 6m3-3 3 3M3 12.5h10"/></svg>
           <span>Cargar Excel</span>
         </button>
-        <button class="btn" id="export" disabled title="Excel con todo: prioridades, asignados, horas y detalle">
+        <button class="btn" id="export" disabled title="Excel con todo: prioridades, horas y detalle">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5h10"/></svg>
           <span>Excel completo</span>
         </button>
-        <button class="btn" id="exportSimple" disabled title="Excel simple para enviar: día, mañana, tarde y tarea">
+        <button class="btn" id="exportSimple" disabled title="Excel para enviar: día, turno, tarea y descripción">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h6"/></svg>
           <span>Excel simple</span>
         </button>
@@ -50,7 +50,7 @@
   </header>
 
   <div class="toolbar">
-    <div class="load" id="load" aria-label="Filtrar por persona"></div>
+    <span class="status" id="status">Cargando…</span>
     <span class="seg" role="group" aria-label="Ordenar por">
       <button id="sortStart" aria-pressed="true">Por inicio</button>
       <button id="sortPrio" aria-pressed="false">Por prioridad</button>
@@ -61,7 +61,6 @@
 
   <div class="foot">
     <span>Prioridad 1 baja · 10 crítica &nbsp;·&nbsp; <span class="sw"></span>Turno extendido</span>
-    <span class="status" id="status">Cargando…</span>
   </div>
 </div>
 
@@ -73,18 +72,31 @@
       <input type="text" id="f-name" maxlength="120" required>
     </div>
     <div class="field">
-      <label for="f-desc">Descripción</label>
-      <textarea id="f-desc" maxlength="1000" rows="3"></textarea>
+      <div class="desc-head">
+        <label for="f-desc">Descripción</label>
+        <span class="ai-actions">
+          <button type="button" class="link-btn" id="aiUndo" hidden>Deshacer</button>
+          <button type="button" class="link-btn" id="aiKeyChange" hidden>Cambiar API key</button>
+          <button type="button" class="btn ai" id="aiGen" hidden>
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7 1.5l1.4 4.1 4.1 1.4-4.1 1.4L7 12.5 5.6 8.4 1.5 7l4.1-1.4z"/><path d="M12.5 10l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z"/></svg>
+            <span>Generar con IA</span>
+          </button>
+        </span>
+      </div>
+      <textarea id="f-desc" maxlength="2000" rows="4" placeholder="Escribí 5 puntos clave, uno por línea, y tocá «Generar con IA» para desarrollarlos"></textarea>
+      <div class="ai-key" id="aiKey" hidden>
+        <label for="f-key">API key de Gemini</label>
+        <div class="key-row">
+          <input type="password" id="f-key" autocomplete="off" spellcheck="false" placeholder="Pegá tu API key">
+          <button type="button" class="btn primary" id="keySave">Guardar y generar</button>
+        </div>
+        <p class="hint">Se guarda solo en este navegador. Si no tenés una, creala gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</p>
+      </div>
     </div>
     <div class="field">
       <span class="lbl" id="prioLbl">Prioridad</span>
       <div class="prios" role="radiogroup" aria-labelledby="prioLbl" id="prios"></div>
       <div class="prio-ends"><span>Baja</span><span>Crítica</span></div>
-    </div>
-    <div class="field">
-      <label for="f-who">Asignado a</label>
-      <input type="text" id="f-who" list="people" maxlength="60">
-      <datalist id="people"></datalist>
     </div>
     <div class="three">
       <div class="field">
