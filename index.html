@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0E0E10">
+  <meta name="description" content="Cronograma semanal de tareas por medios días, con prioridad, asignación y exportación a Excel.">
+  <title>Cronograma Semanal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <style>body{margin:0} [hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Cronograma semanal</h1>
+      <div class="sub" id="sub">08:00 – 17:00 · Mañana 08:00–12:30 · Tarde 12:30–17:00</div>
+    </div>
+    <div class="actions">
+      <div class="weeknav" role="group" aria-label="Semana">
+        <button class="icon-btn" id="prev" aria-label="Semana anterior"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3 5 8l5 5"/></svg></button>
+        <span class="label" id="weekLabel">—</span>
+        <button class="icon-btn" id="next" aria-label="Semana siguiente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 3 5 5-5 5"/></svg></button>
+      </div>
+      <button class="btn ghost" id="thisWeek">Hoy</button>
+      <button class="btn" id="export" disabled title="Preparando exportación…">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5h10"/></svg>
+        Exportar Excel
+      </button>
+      <button class="btn primary" id="newTask">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>
+        Nueva tarea
+      </button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="load" id="load" aria-label="Filtrar por persona"></div>
+    <span class="seg" role="group" aria-label="Ordenar por">
+      <button id="sortStart" aria-pressed="true">Por inicio</button>
+      <button id="sortPrio" aria-pressed="false">Por prioridad</button>
+    </span>
+  </div>
+
+  <div class="board-wrap"><div class="board" id="board"></div></div>
+
+  <div class="foot">
+    <span>Prioridad 1 baja · 10 crítica &nbsp;·&nbsp; <span class="sw"></span>Turno extendido</span>
+    <span class="status" id="status">Cargando…</span>
+  </div>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <form class="dlg" id="form" novalidate>
+    <h2 id="dlgTitle">Nueva tarea</h2>
+    <div class="field">
+      <label for="f-name">Nombre</label>
+      <input type="text" id="f-name" maxlength="120" required>
+    </div>
+    <div class="field">
+      <label for="f-desc">Descripción</label>
+      <textarea id="f-desc" maxlength="1000" rows="3"></textarea>
+    </div>
+    <div class="field">
+      <span class="lbl" id="prioLbl">Prioridad</span>
+      <div class="prios" role="radiogroup" aria-labelledby="prioLbl" id="prios"></div>
+      <div class="prio-ends"><span>Baja</span><span>Crítica</span></div>
+    </div>
+    <div class="field">
+      <label for="f-who">Asignado a</label>
+      <input type="text" id="f-who" list="people" maxlength="60">
+      <datalist id="people"></datalist>
+    </div>
+    <div class="three">
+      <div class="field">
+        <label for="f-day">Empieza el</label>
+        <select id="f-day"></select>
+      </div>
+      <div class="field">
+        <span class="lbl" id="halfLbl">Turno</span>
+        <div class="halves" role="radiogroup" aria-labelledby="halfLbl">
+          <input type="radio" name="half" id="h0" value="0" checked><label for="h0">Mañana</label>
+          <input type="radio" name="half" id="h1" value="1"><label for="h1">Tarde</label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-dur">Duración</label>
+        <select id="f-dur"></select>
+      </div>
+    </div>
+    <div class="summary" id="f-sum"></div>
+    <div class="dlg-actions">
+      <div id="delWrap">
+        <button type="button" class="btn ghost danger" id="del">Eliminar</button>
+        <span class="confirm" id="confirmDel" hidden>¿Eliminar?
+          <button type="button" class="btn danger" id="delYes">Sí, eliminar</button>
+          <button type="button" class="btn ghost" id="delNo">No</button>
+        </span>
+      </div>
+      <div class="r">
+        <button type="button" class="btn ghost" id="cancel">Cancelar</button>
+        <button type="submit" class="btn primary" id="save">Guardar</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
