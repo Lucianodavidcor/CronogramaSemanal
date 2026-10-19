@@ -145,6 +145,8 @@
     $('sortPrio').setAttribute('aria-pressed', state.sort === 'prio');
     $('newTask').hidden = !state.canWrite;
     $('newTask').disabled = state.mode === 'pending';
+    $('import').hidden = !state.canWrite;
+    $('import').disabled = state.mode === 'pending';
 
     const total = state.tasks.reduce((a,t) => a + taskHours(t), 0);
     $('status').textContent = state.mode === 'pending' ? '' :
@@ -196,8 +198,9 @@
     else toast('No se pudo guardar. Probá de nuevo en unos segundos.');
   }
 
+  function taskBody(t){ return {week:t.week, name:t.name, desc:t.desc, priority:t.priority, assignee:t.assignee, day:t.day, half:t.half, dur:t.dur, updatedAt: Date.now()}; }
   async function putTask(t){
-    const body = {week:t.week, name:t.name, desc:t.desc, priority:t.priority, assignee:t.assignee, day:t.day, half:t.half, dur:t.dur, updatedAt: Date.now()};
+    const body = taskBody(t);
     if (state.mode === 'db') { try { await db.collection('tasks').doc(t.id).set(body); return true; } catch(e){ writeFailed(e); return false; } }
     const i = local.tasks.findIndex(x => x.id === t.id);
     if (i >= 0) local.tasks[i] = {id:t.id, ...body}; else local.tasks.push({id:t.id, ...body});
@@ -309,7 +312,8 @@
   $('prev').addEventListener('click', () => goWeek(iso(addDays(parseISO(state.week), -7))));
   $('next').addEventListener('click', () => goWeek(iso(addDays(parseISO(state.week), 7))));
   $('thisWeek').addEventListener('click', () => goWeek(iso(mondayOf(new Date()))));
-  $('export').addEventListener('click', exportExcel);
+  $('export').addEventListener('click', () => exportExcel('full'));
+  $('exportSimple').addEventListener('click', () => exportExcel('simple'));
 
   /* ---------- Excel ---------- */
   function loadExcelJS(){
@@ -323,14 +327,14 @@
     });
   }
 
-  async function exportExcel(){
+  async function exportExcel(kind){
     if (!downloads && !standalone) return;
-    const btn = $('export'); btn.disabled = true;
-    const label = btn.lastChild.textContent; btn.lastChild.textContent = ' Generando…';
+    const btn = $(kind === 'simple' ? 'exportSimple' : 'export'); btn.disabled = true;
+    const lbl = btn.querySelector('span'), label = lbl.textContent; lbl.textContent = 'Generando…';
     try {
       try { await loadExcelJS(); } catch { toast('No se pudo cargar el generador de Excel. Revisá la conexión y probá de nuevo.'); return; }
-      const buf = await buildWorkbook();
-      const file = `Cronograma ${state.week}.xlsx`;
+      const buf = kind === 'simple' ? await buildSimple() : await buildWorkbook();
+      const file = (kind === 'simple' ? 'Planificación ' : 'Cronograma ') + state.week + '.xlsx';
       const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       if (downloads) await downloads.save({filename: file, data: blob});
       else {
@@ -345,7 +349,7 @@
       else if (c === 'rate_limited') toast('Ya hay una descarga esperando confirmación.');
       else if (c) toast('La exportación no está disponible en esta vista.');
       else { console.error(e); toast('No se pudo generar el Excel.'); }
-    } finally { btn.disabled = false; btn.lastChild.textContent = label; }
+    } finally { btn.disabled = false; lbl.textContent = label; }
   }
 
   async function buildWorkbook(){
@@ -505,7 +509,201 @@
     });
     if (cr === 5) { wc.mergeCells(5,1,5,ccols.length); Object.assign(wc.getCell(5,1), {value:'Sin tareas asignadas.', font:font({italic:true, color:C.muted}), alignment:{horizontal:'center'}}); }
 
+    addConfig(wb);
     return wb.xlsx.writeBuffer();
+  }
+
+  /* Hoja oculta con la semana y los horarios, para poder volver a cargar el archivo */
+  function addConfig(wb){
+    const c = wb.addWorksheet('_config', {state:'hidden'});
+    const rows = [['semana', state.week]];
+    for (let d = 0; d < 5; d++) rows.push(['fin_' + d, endOf(d)]);
+    rows.push(['nota', 'Hoja usada por Cronograma Semanal para volver a cargar este archivo.']);
+    rows.forEach(([k, v], i) => { c.getCell(i+1, 1).value = k; c.getCell(i+1, 2).value = v; });
+  }
+
+  /* Excel simple: día, mañana y tarde con el nombre de las tareas */
+  async function buildSimple(){
+    const X = window.ExcelJS;
+    const wb = new X.Workbook(); wb.creator = 'Cronograma semanal'; wb.created = new Date();
+    const ink = 'FF18181B', muted = 'FF71717A', line = 'FFE4E4E7';
+    const f = (o={}) => ({name:'Calibri', size:11, color:{argb: o.c || ink}, bold: !!o.b, italic: !!o.i, size: o.s || 11});
+    const mon = parseISO(state.week);
+    const ws = wb.addWorksheet('Planificación', {views:[{showGridLines:false}],
+      pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true,
+        margins:{left:0.5, right:0.5, top:0.6, bottom:0.6, header:0.3, footer:0.3}}});
+    ws.columns = [{width:16},{width:46},{width:46}];
+    ws.mergeCells(1,1,1,3);
+    Object.assign(ws.getCell(1,1), {value:'Planificación semanal', font:f({s:16, b:true}), alignment:{vertical:'middle'}});
+    ws.getRow(1).height = 26;
+    ws.mergeCells(2,1,2,3);
+    Object.assign(ws.getCell(2,1), {value:'Semana del ' + weekLabel(state.week, true), font:f({s:10.5, c:muted})});
+    ws.getRow(3).height = 10;
+    ['Día','Mañana','Tarde'].forEach((h, i) => Object.assign(ws.getCell(4, i+1), {value:h, font:f({b:true}),
+      fill:{type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F4F5'}}, alignment:{vertical:'middle', indent:1},
+      border:{bottom:{style:'thin', color:{argb:ink}}}}));
+    ws.getRow(4).height = 24;
+    const inSlot = s => sortedTasks(state.tasks).filter(t => startSlot(t) <= s && endSlot(t) >= s).map(t => t.name);
+    for (let d = 0; d < 5; d++) {
+      const r = 5 + d, date = addDays(mon, d);
+      const am = inSlot(d*2), pm = inSlot(d*2+1);
+      const border = {bottom:{style:'thin', color:{argb:line}}};
+      Object.assign(ws.getCell(r,1), {value:`${DAYS[d]}\n${pad(date.getDate())}/${pad(date.getMonth()+1)}`, font:f({b:true}), alignment:{vertical:'top', wrapText:true, indent:1}, border});
+      [am, pm].forEach((list, i) => Object.assign(ws.getCell(r, i+2), {
+        value: list.length ? list.map(n => '• ' + n).join('\n') : '—',
+        font: list.length ? f() : f({c:muted}), alignment:{vertical:'top', wrapText:true, indent:1}, border}));
+      const lines = Math.max(2, am.length, pm.length) + am.concat(pm).filter(n => n.length > 44).length;
+      ws.getRow(r).height = Math.max(36, lines * 15 + 12);
+    }
+    addConfig(wb);
+    return wb.xlsx.writeBuffer();
+  }
+
+  /* ---------- cargar Excel ---------- */
+  const DAY_N = ['lunes','martes','miercoles','jueves','viernes'];
+  function cellText(v){
+    if (v == null) return '';
+    if (v instanceof Date) return v.toISOString().slice(0,10);
+    if (typeof v === 'object') {
+      if (Array.isArray(v.richText)) return v.richText.map(x => x.text).join('');
+      if ('result' in v) return cellText(v.result);
+      if ('text' in v) return cellText(v.text);
+      return '';
+    }
+    return String(v);
+  }
+  const norm = v => cellText(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  function parseSlot(v){ const n = norm(v); const d = DAY_N.findIndex(x => n.startsWith(x)); return d < 0 ? null : d*2 + (n.includes('tarde') ? 1 : 0); }
+  function parseDur(v){ const m = cellText(v).replace('½', '.5').replace(',', '.').match(/\d*\.?\d+/); return m ? Math.round(parseFloat(m[0])*2) || null : null; }
+  function findHeader(ws, names){
+    for (let r = 1; r <= Math.min(20, ws.rowCount); r++) {
+      const map = {};
+      ws.getRow(r).eachCell((c, col) => { const k = norm(c.value); if (k && !(k in map)) map[k] = col; });
+      if (names.every(n => n in map)) return {row:r, map};
+    }
+    return null;
+  }
+  function parseDetalle(ws){
+    const h = findHeader(ws, ['tarea','inicio']); if (!h) return [];
+    const col = k => h.map[k], out = [];
+    for (let r = h.row + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r), get = k => col(k) ? row.getCell(col(k)).value : null;
+      const name = cellText(get('tarea')).trim(), s0 = parseSlot(get('inicio'));
+      if (!name || s0 === null) continue;
+      const s1 = parseSlot(get('fin'));
+      const dur = (s1 !== null && s1 >= s0) ? s1 - s0 + 1 : (parseDur(get('duracion')) || 1);
+      const who = cellText(get('asignado')).trim(), desc = cellText(get('descripcion')).trim();
+      out.push({name, desc: desc === '—' ? '' : desc, priority: clampInt(parseFloat(cellText(get('prioridad')).replace(',', '.')), 1, 10, 5),
+        assignee: norm(who) === 'sin asignar' ? '' : who, day: Math.floor(s0/2), half: s0 % 2, dur: Math.min(dur, 10 - s0)});
+    }
+    return out;
+  }
+  function parseSimple(ws){
+    const h = findHeader(ws, ['dia','manana','tarde']); if (!h) return [];
+    const slots = new Map();
+    for (let r = h.row + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r), d = parseSlot(row.getCell(h.map['dia']).value);
+      if (d === null) continue;
+      [['manana',0],['tarde',1]].forEach(([k, half]) => {
+        cellText(row.getCell(h.map[k]).value).split(/\r?\n/).map(x => x.replace(/^[•\-\*·]\s*/, '').trim())
+          .filter(x => x && x !== '—').forEach(n => { if (!slots.has(n)) slots.set(n, new Set()); slots.get(n).add(d + half); });
+      });
+    }
+    const out = [];
+    for (const [name, set] of slots) {
+      const arr = [...set].sort((a,b) => a-b);
+      let st = arr[0], prev = arr[0];
+      for (const s of arr.slice(1).concat([null])) {
+        if (s === prev + 1) { prev = s; continue; }
+        out.push({name, desc:'', priority:5, assignee:'', day: Math.floor(st/2), half: st % 2, dur: prev - st + 1});
+        st = prev = s;
+      }
+    }
+    return out;
+  }
+  async function readWorkbook(buf){
+    const wb = new window.ExcelJS.Workbook(); await wb.xlsx.load(buf);
+    let week = null; const ends = {};
+    const cfg = wb.getWorksheet('_config');
+    if (cfg) cfg.eachRow(row => {
+      const k = norm(row.getCell(1).value), v = cellText(row.getCell(2).value).trim();
+      if (k === 'semana' && /^\d{4}-\d{2}-\d{2}$/.test(v)) week = iso(mondayOf(parseISO(v)));
+      const m = k.match(/^fin_([0-4])$/); if (m && END_OPTS.includes(v) && v !== BASE_END) ends[m[1]] = v;
+    });
+    let tasks = [], source = 'completo';
+    const det = wb.worksheets.find(w => norm(w.name) === 'detalle');
+    if (det) tasks = parseDetalle(det);
+    if (!tasks.length) {
+      source = 'simple';
+      for (const w of wb.worksheets) { if (w.state && w.state !== 'visible') continue; tasks = parseSimple(w); if (tasks.length) break; }
+    }
+    return {week, ends, tasks, source};
+  }
+  async function existingIds(wk){
+    if (state.mode === 'db') { const s = await db.collection('tasks').where('week','==',wk).get(); return s.docs.filter(d => d.exists).map(d => d.id); }
+    return local.tasks.filter(t => t.week === wk).map(t => t.id);
+  }
+
+  let pendingImport = null;
+  $('import').addEventListener('click', () => $('fileIn').click());
+  $('fileIn').addEventListener('change', async e => {
+    const file = e.target.files && e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    if (!/\.xlsx$/i.test(file.name)) { toast('Elegí un archivo .xlsx'); return; }
+    const btn = $('import'), lbl = btn.querySelector('span'); btn.disabled = true; lbl.textContent = 'Leyendo…';
+    try {
+      try { await loadExcelJS(); } catch { toast('No se pudo cargar el lector de Excel. Revisá la conexión y probá de nuevo.'); return; }
+      let data;
+      try { data = await readWorkbook(await file.arrayBuffer()); } catch { toast('No se pudo leer el archivo. Verificá que sea un Excel (.xlsx) válido.'); return; }
+      if (!data.tasks.length) { toast('No encontré tareas. Usá un Excel exportado desde acá, completo o simple.'); return; }
+      const week = data.week || state.week;
+      const existing = await existingIds(week);
+      pendingImport = {...data, week, existing};
+      $('impSum').innerHTML = `<b>${data.tasks.length} ${data.tasks.length === 1 ? 'tarea' : 'tareas'}</b> para la semana del <b>${esc(weekLabel(week, true))}</b>.` +
+        (existing.length ? ` Esa semana ya tiene ${existing.length} ${existing.length === 1 ? 'tarea cargada' : 'tareas cargadas'}.` : '');
+      const sorted = data.tasks.slice().sort((a,b) => startSlot(a) - startSlot(b));
+      $('impList').innerHTML = sorted.slice(0, 12).map(t => `<li><span class="w">${slotName(startSlot(t))}</span><span class="n">${esc(t.name)}</span></li>`).join('') +
+        (sorted.length > 12 ? `<li class="more">y ${sorted.length - 12} más</li>` : '');
+      $('impHint').textContent = (data.week ? '' : 'El archivo no indica la semana: se carga en la que estás viendo. ') +
+        (data.source === 'simple' ? 'Es un Excel simple: se cargan solo nombres, días y turnos. Prioridad y asignado quedan para completar.' : 'Se toman los datos de la hoja «Detalle», con los cambios que le hayas hecho en Excel.');
+      $('impAdd').hidden = !existing.length;
+      $('impReplace').textContent = existing.length ? 'Reemplazar semana' : 'Cargar';
+      $('impDlg').showModal();
+    } finally { btn.disabled = false; lbl.textContent = 'Cargar Excel'; }
+  });
+  $('impCancel').addEventListener('click', () => { pendingImport = null; $('impDlg').close(); });
+  $('impAdd').addEventListener('click', () => applyImport(false));
+  $('impReplace').addEventListener('click', () => applyImport(true));
+
+  async function applyImport(replace){
+    const p = pendingImport; pendingImport = null; $('impDlg').close();
+    if (!p) return;
+    const tasks = p.tasks.map(t => normTask(newId(), {...t, week: p.week}));
+    toast('Cargando tareas…');
+    if (state.mode === 'db') {
+      try {
+        let ends = p.ends;
+        if (!replace) { const w = await db.doc('weeks/' + p.week).get(); ends = {...((w.exists && w.data().ends) || {}), ...p.ends}; }
+        if (replace) for (const id of p.existing) await db.doc('tasks/' + id).delete();
+        for (const t of tasks) await db.collection('tasks').doc(t.id).set(taskBody(t));
+        await db.doc('weeks/' + p.week).set({ends});
+      } catch (e) { writeFailed(e); return; }
+    } else {
+      if (replace) local.tasks = local.tasks.filter(t => t.week !== p.week);
+      for (const t of tasks) local.tasks.push({id: t.id, ...taskBody(t)});
+      const prev = (local.weeks[p.week] || {}).ends || {};
+      local.weeks[p.week] = {ends: replace ? p.ends : {...prev, ...p.ends}};
+      saveLocal();
+    }
+    goWeek(p.week);
+    toast(`${tasks.length} ${tasks.length === 1 ? 'tarea cargada' : 'tareas cargadas'}`);
+  }
+
+  function setExportReady(ok){
+    for (const id of ['export','exportSimple']) {
+      $(id).disabled = !ok;
+      if (!ok) $(id).title = 'La exportación no está disponible en esta vista';
+    }
   }
 
   /* ---------- arranque ---------- */
@@ -514,12 +712,11 @@
     const C = window.claude;
     if (!C || typeof C.use !== 'function') {
       standalone = true; loadLocal(); state.mode = 'local'; subscribe();
-      $('export').disabled = false; $('export').title = 'Descargar la semana en Excel'; return;
+      setExportReady(true); return;
     }
     C.use('downloads').then(d => {
       downloads = d;
-      $('export').disabled = !d;
-      $('export').title = d ? 'Descargar la semana en Excel' : 'La exportación no está disponible en esta vista';
+      setExportReady(!!d);
     }).catch(() => {});
     let d = null;
     try { d = await C.use('db'); } catch { d = null; }

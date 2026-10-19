@@ -28,6 +28,18 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.ghost:hover{color:var(--ink);background:var(--surface-2)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn svg{width:15px;height:15px;flex:none}
+.xl{display:inline-flex}
+.xl .btn{border-radius:0;margin-left:-1px}
+.xl .btn:first-child{border-radius:8px 0 0 8px;margin-left:0}
+.xl .btn:last-child{border-radius:0 8px 8px 0}
+.xl .btn:hover{position:relative;z-index:1}
+.implist{list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.implist li{display:flex;gap:10px;padding:7px 11px;border-bottom:1px solid var(--line-soft);font-size:13px;min-width:0}
+.implist li:last-child{border-bottom:0}
+.implist .w{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);flex:none;width:118px}
+.implist .n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.implist li.more{color:var(--muted)}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
 .icon-btn{width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;border-radius:6px;cursor:pointer;color:var(--muted)}
 .icon-btn:hover{background:var(--surface-2);color:var(--ink)}
 .icon-btn svg{width:15px;height:15px}

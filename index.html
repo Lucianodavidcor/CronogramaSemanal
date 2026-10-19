@@ -27,10 +27,21 @@
         <button class="icon-btn" id="next" aria-label="Semana siguiente"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 3 5 5-5 5"/></svg></button>
       </div>
       <button class="btn ghost" id="thisWeek">Hoy</button>
-      <button class="btn" id="export" disabled title="Preparando exportación…">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5h10"/></svg>
-        Exportar Excel
-      </button>
+      <input type="file" id="fileIn" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+      <div class="xl" role="group" aria-label="Excel">
+        <button class="btn" id="import" disabled title="Cargar un Excel exportado desde acá para seguir editándolo">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3m0 0L5 6m3-3 3 3M3 12.5h10"/></svg>
+          <span>Cargar Excel</span>
+        </button>
+        <button class="btn" id="export" disabled title="Excel con todo: prioridades, asignados, horas y detalle">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5h10"/></svg>
+          <span>Excel completo</span>
+        </button>
+        <button class="btn" id="exportSimple" disabled title="Excel simple para enviar: día, mañana, tarde y tarea">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h6"/></svg>
+          <span>Excel simple</span>
+        </button>
+      </div>
       <button class="btn primary" id="newTask">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>
         Nueva tarea
@@ -107,6 +118,22 @@
       </div>
     </div>
   </form>
+</dialog>
+
+<dialog id="impDlg" aria-labelledby="impTitle">
+  <div class="dlg">
+    <h2 id="impTitle">Cargar Excel</h2>
+    <p class="summary" id="impSum" style="margin:0"></p>
+    <ul class="implist" id="impList"></ul>
+    <p class="hint" id="impHint"></p>
+    <div class="dlg-actions">
+      <div class="r">
+        <button type="button" class="btn ghost" id="impCancel">Cancelar</button>
+        <button type="button" class="btn" id="impAdd">Agregar a las actuales</button>
+        <button type="button" class="btn primary" id="impReplace">Reemplazar semana</button>
+      </div>
+    </div>
+  </div>
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

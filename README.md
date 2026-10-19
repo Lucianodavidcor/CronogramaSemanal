@@ -5,7 +5,9 @@ Web para armar el cronograma de tareas de la semana, de lunes a viernes, dividid
 - Horario base de 08:00 a 17:00 (mañana 08:00–12:30, tarde 12:30–17:00). Cada día se puede extender hasta las 22:00 desde su encabezado.
 - Cada tarea tiene nombre, descripción, prioridad del 1 al 10, persona asignada, día y turno de inicio, y duración en medios días.
 - Muestra la carga por persona y marca las tareas superpuestas de una misma persona.
-- Exporta la semana a Excel (.xlsx) con tres hojas: cronograma, detalle y carga por persona.
+- **Excel completo**: exporta la semana con tres hojas (cronograma, detalle y carga por persona).
+- **Excel simple**: solo día, mañana y tarde con el nombre de cada tarea, pensado para enviar.
+- **Cargar Excel**: vuelve a cargar un Excel exportado desde la web (completo o simple) para seguir editándolo. Del completo se toma la hoja «Detalle», así que los cambios hechos ahí en Excel también se cargan. Se puede reemplazar la semana o agregar a las tareas que ya hay.
 
 ## Uso
 
